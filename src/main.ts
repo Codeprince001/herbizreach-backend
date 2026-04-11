@@ -33,7 +33,7 @@ async function bootstrap() {
     app.useStaticAssets(uploadAbs, { prefix: '/files/' });
   }
 
-  const corsOrigins = config.get<string[]>('corsOrigins') ?? ['http://localhost:3000'];
+  const corsOrigins = config.get<string[]>('corsOrigins') ?? ['http://localhost:3000,https://herbizreach.vercel.app'];
   app.enableCors({
     origin: corsOrigins,
     credentials: true,

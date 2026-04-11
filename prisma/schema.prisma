@@ -106,7 +106,8 @@ model Product {
   pageViews   PageView[]
   shareEvents ShareEvent[]
   categories  ProductCategory[]
-  leads       Lead[]
+  leads          Lead[]
+  conversations  Conversation[]
 
   @@index([userId])
   @@index([featured])
@@ -147,16 +148,19 @@ model Conversation {
   storeUserId    String             @map("store_user_id") @db.Uuid
   customerUserId String?            @map("customer_user_id") @db.Uuid
   guestToken     String?            @unique @map("guest_token")
+  productId      String?            @map("product_id") @db.Uuid
   status         ConversationStatus @default(OPEN)
   lastMessageAt  DateTime?          @map("last_message_at")
   createdAt      DateTime           @default(now()) @map("created_at")
 
   storeOwner User      @relation("StoreOwner", fields: [storeUserId], references: [id], onDelete: Cascade)
   customer   User?     @relation("Customer", fields: [customerUserId], references: [id], onDelete: SetNull)
+  product    Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
   messages   Message[]
 
   @@index([storeUserId, status])
   @@index([customerUserId])
+  @@index([productId])
   @@map("conversations")
 }
 

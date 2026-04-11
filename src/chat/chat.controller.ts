@@ -56,7 +56,7 @@ export class ChatController {
   @ApiOperation({ summary: 'Start conversation (guest or optional Bearer for customer)' })
   async start(@Body() dto: StartConversationDto, @Req() req: Request) {
     const user = await this.optionalUser(req);
-    return this.chatService.startConversation(dto.storeSlug, user);
+    return this.chatService.startConversation(dto.storeSlug, user, dto.productId);
   }
 
   @Get('conversations')
