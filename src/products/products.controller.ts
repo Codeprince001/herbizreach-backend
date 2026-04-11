@@ -8,11 +8,12 @@ import {
   Patch,
   Post,
   UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -26,7 +27,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
 import { CreateProductFormDto } from './dto/create-product-form.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { productImageMulterOptions } from './multer-options.factory';
+import { MAX_PRODUCT_IMAGES, productImageMulterOptions } from './multer-options.factory';
 import { ProductsService } from './products.service';
 
 @ApiTags('products')
@@ -38,14 +39,14 @@ export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create product (multipart: image + fields)' })
+  @ApiOperation({ summary: 'Create product (multipart: images + fields)' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['image', 'name', 'price', 'descriptionRaw'],
+      required: ['images', 'name', 'price', 'descriptionRaw'],
       properties: {
-        image: { type: 'string', format: 'binary' },
+        images: { type: 'array', items: { type: 'string', format: 'binary' } },
         name: { type: 'string' },
         price: { type: 'number' },
         descriptionRaw: { type: 'string' },
@@ -53,13 +54,47 @@ export class ProductsController {
       },
     },
   })
-  @UseInterceptors(FileInterceptor('image', productImageMulterOptions()))
+  @UseInterceptors(
+    FilesInterceptor('images', MAX_PRODUCT_IMAGES, productImageMulterOptions(MAX_PRODUCT_IMAGES)),
+  )
   async create(
     @CurrentUser() user: JwtPayloadUser,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Express.Multer.File[],
     @Body() body: CreateProductFormDto,
   ) {
-    return this.productsService.createForUser(user.sub, body, file);
+    return this.productsService.createForUser(user.sub, body, files ?? []);
+  }
+
+  @Post(':id/duplicate')
+  @ApiOperation({ summary: 'Duplicate product (draft copy, same photos)' })
+  async duplicate(
+    @CurrentUser() user: JwtPayloadUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.productsService.duplicateForUser(user.sub, id);
+  }
+
+  @Post(':id/images')
+  @ApiOperation({ summary: 'Append more product images (max 8 total)' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['images'],
+      properties: {
+        images: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+    },
+  })
+  @UseInterceptors(
+    FilesInterceptor('images', MAX_PRODUCT_IMAGES, productImageMulterOptions(MAX_PRODUCT_IMAGES)),
+  )
+  async appendImages(
+    @CurrentUser() user: JwtPayloadUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.productsService.appendImagesForUser(user.sub, id, files ?? []);
   }
 
   @Get()
@@ -78,7 +113,7 @@ export class ProductsController {
   }
 
   @Patch(':id/image')
-  @ApiOperation({ summary: 'Replace product image' })
+  @ApiOperation({ summary: 'Replace all product images with a single new image' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -87,7 +122,7 @@ export class ProductsController {
       properties: { image: { type: 'string', format: 'binary' } },
     },
   })
-  @UseInterceptors(FileInterceptor('image', productImageMulterOptions()))
+  @UseInterceptors(FileInterceptor('image', productImageMulterOptions(1)))
   async updateImage(
     @CurrentUser() user: JwtPayloadUser,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

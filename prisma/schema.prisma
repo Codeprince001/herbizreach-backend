@@ -60,6 +60,7 @@ model StoreSettings {
   bannerUrl      String?  @map("banner_url")
   accentColor    String?  @map("accent_color")
   tagline        String?
+  description    String?
   showChatWidget Boolean  @default(true) @map("show_chat_widget")
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -98,7 +99,7 @@ model Product {
   descriptionRaw     String   @map("description_raw") @db.Text
   descriptionAi      String?  @map("description_ai") @db.Text
   captionAi          String?  @map("caption_ai") @db.Text
-  imageUrl           String   @map("image_url")
+  imageUrls          String[] @default([]) @map("image_urls")
   isPublished        Boolean  @default(true) @map("is_published")
   createdAt          DateTime @default(now()) @map("created_at")
 

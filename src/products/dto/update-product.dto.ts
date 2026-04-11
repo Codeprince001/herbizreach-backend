@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsNumber,
@@ -114,4 +115,30 @@ export class UpdateProductDto {
   })
   @IsBoolean()
   isPublished?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Reorder or remove images; each URL must already belong to this product. Omit to leave gallery unchanged.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined) return undefined;
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      const t = value.trim();
+      if (t.startsWith('[')) {
+        try {
+          return JSON.parse(t) as string[];
+        } catch {
+          return undefined;
+        }
+      }
+    }
+    return undefined;
+  })
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  @MaxLength(2000, { each: true })
+  imageUrls?: string[];
 }
