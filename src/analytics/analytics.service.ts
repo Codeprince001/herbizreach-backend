@@ -7,8 +7,11 @@ export class AnalyticsService {
 
   async overview(userId: string) {
     const now = new Date();
-    const day7 = new Date(now);
-    day7.setDate(day7.getDate() - 7);
+    // Seven UTC calendar days ending today (matches bucket keys from viewedAt).
+    const utcY = now.getUTCFullYear();
+    const utcM = now.getUTCMonth();
+    const utcD = now.getUTCDate();
+    const windowStart = new Date(Date.UTC(utcY, utcM, utcD - 6, 0, 0, 0, 0));
 
     const [totalViews, totalShares, products, recentViews] = await Promise.all([
       this.prisma.pageView.count({ where: { userId } }),
@@ -29,7 +32,7 @@ export class AnalyticsService {
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.pageView.findMany({
-        where: { userId, viewedAt: { gte: day7 } },
+        where: { userId, viewedAt: { gte: windowStart } },
         select: { viewedAt: true },
       }),
     ]);
@@ -38,6 +41,13 @@ export class AnalyticsService {
     for (const v of recentViews) {
       const d = v.viewedAt.toISOString().slice(0, 10);
       dailyMap.set(d, (dailyMap.get(d) ?? 0) + 1);
+    }
+
+    const viewsLast7Days: { date: string; count: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const bucket = new Date(Date.UTC(utcY, utcM, utcD - i, 0, 0, 0, 0));
+      const key = bucket.toISOString().slice(0, 10);
+      viewsLast7Days.push({ date: key, count: dailyMap.get(key) ?? 0 });
     }
 
     return {
@@ -52,9 +62,7 @@ export class AnalyticsService {
         pageViews: p._count.pageViews,
         shares: p._count.shareEvents,
       })),
-      viewsLast7Days: Array.from(dailyMap.entries())
-        .map(([date, count]) => ({ date, count }))
-        .sort((a, b) => a.date.localeCompare(b.date)),
+      viewsLast7Days,
     };
   }
 }

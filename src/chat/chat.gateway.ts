@@ -9,6 +9,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { MessageSenderType, UserRole } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
 import { UsersService } from '../users/users.service';
@@ -16,6 +17,10 @@ import { ChatService } from './chat.service';
 
 function convRoom(id: string) {
   return `conv:${id}`;
+}
+
+function storeInboxRoom(ownerId: string) {
+  return `store-inbox:${ownerId}`;
 }
 
 @WebSocketGateway({
@@ -35,7 +40,7 @@ export class ChatGateway implements OnGatewayConnection {
     private readonly config: ConfigService,
   ) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket) {
     const origins = this.config.get<string[]>('corsOrigins') ?? ['http://localhost:3000'];
     const origin = client.handshake.headers.origin;
     if (
@@ -45,6 +50,12 @@ export class ChatGateway implements OnGatewayConnection {
     ) {
       this.logger.warn(`Socket rejected origin ${origin}`);
       client.disconnect();
+      return;
+    }
+    const user = await this.resolveUser(client);
+    client.data.user = user;
+    if (user?.role === UserRole.OWNER) {
+      await client.join(storeInboxRoom(user.sub));
     }
   }
 
@@ -102,6 +113,17 @@ export class ChatGateway implements OnGatewayConnection {
       guestToken,
     );
     this.server.to(convRoom(payload.conversationId)).emit('message', msg);
+    if (
+      msg.senderType !== MessageSenderType.OWNER &&
+      msg.senderType !== MessageSenderType.SYSTEM
+    ) {
+      const storeUserId = await this.chatService.getStoreUserIdForConversation(
+        payload.conversationId,
+      );
+      if (storeUserId) {
+        this.server.to(storeInboxRoom(storeUserId)).emit('storeMessage', msg);
+      }
+    }
     return { ok: true, id: msg.id };
   }
 

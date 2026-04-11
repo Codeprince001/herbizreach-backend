@@ -30,7 +30,11 @@ export class ChatService {
     return owner;
   }
 
-  async startConversation(storeSlug: string, user?: JwtPayloadUser | null) {
+  async startConversation(
+    storeSlug: string,
+    user?: JwtPayloadUser | null,
+    productId?: string | null,
+  ) {
     const owner = await this.getOwnerBySlug(storeSlug);
     const settings = await this.prisma.storeSettings.findUnique({
       where: { userId: owner.id },
@@ -51,14 +55,34 @@ export class ChatService {
     } else {
       guestToken = randomUUID();
     }
+
+    let linkedProduct: { id: string; name: string } | null = null;
+    const rawPid = productId?.trim();
+    if (rawPid) {
+      const product = await this.prisma.product.findFirst({
+        where: {
+          id: rawPid,
+          userId: owner.id,
+          isPublished: true,
+        },
+        select: { id: true, name: true },
+      });
+      if (!product) {
+        throw new NotFoundException('Product not found on this store');
+      }
+      linkedProduct = product;
+    }
+
     const conv = await this.prisma.conversation.create({
       data: {
         storeUserId: owner.id,
         customerUserId,
         guestToken,
         status: ConversationStatus.OPEN,
+        productId: linkedProduct?.id ?? null,
       },
     });
+
     return {
       conversationId: conv.id,
       guestToken: conv.guestToken,
@@ -95,12 +119,22 @@ export class ChatService {
   async listMyConversations(user: JwtPayloadUser) {
     if (user.role === UserRole.OWNER) {
       return this.prisma.conversation.findMany({
-        where: { storeUserId: user.sub },
+        where: {
+          storeUserId: user.sub,
+          messages: {
+            some: {
+              senderType: {
+                in: [MessageSenderType.GUEST, MessageSenderType.CUSTOMER],
+              },
+            },
+          },
+        },
         orderBy: { lastMessageAt: 'desc' },
         include: {
           customer: {
             select: { id: true, fullName: true, email: true, avatarUrl: true },
           },
+          product: { select: { id: true, name: true } },
         },
       });
     }
@@ -118,6 +152,7 @@ export class ChatService {
               avatarUrl: true,
             },
           },
+          product: { select: { id: true, name: true } },
         },
       });
     }
@@ -193,6 +228,14 @@ export class ChatService {
       data: { lastMessageAt: new Date() },
     });
     return msg;
+  }
+
+  async getStoreUserIdForConversation(conversationId: string): Promise<string | null> {
+    const row = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { storeUserId: true },
+    });
+    return row?.storeUserId ?? null;
   }
 
   async archive(conversationId: string, user: JwtPayloadUser) {
