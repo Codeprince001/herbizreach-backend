@@ -13,6 +13,7 @@ import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductFormDto } from './dto/create-product-form.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { MAX_PRODUCT_IMAGES } from './multer-options.factory';
 
 const productInclude = {
   categories: { include: { category: true } },
@@ -69,7 +70,14 @@ export class ProductsService {
   }
 
   serializeProduct(p: ProductWithCats | Product) {
-    const base = { ...p, price: p.price.toString() };
+    const imageUrls = Array.isArray(p.imageUrls) ? [...p.imageUrls] : [];
+    const price = p.price;
+    const base = {
+      ...p,
+      price: price.toString(),
+      imageUrls,
+      imageUrl: imageUrls[0] ?? '',
+    };
     if ('categories' in p && p.categories) {
       return {
         ...base,
@@ -91,11 +99,31 @@ export class ProductsService {
     }
   }
 
-  async createForUser(userId: string, dto: CreateProductFormDto, file: Express.Multer.File) {
-    if (!file?.buffer?.length) {
-      throw new BadRequestException('Product image is required');
+  private validateImageUrlList(urls: string[], label: string) {
+    if (urls.length > MAX_PRODUCT_IMAGES) {
+      throw new BadRequestException(`At most ${MAX_PRODUCT_IMAGES} images per product`);
     }
-    const imageUrl = await this.persistImage(userId, file);
+    if (new Set(urls).size !== urls.length) {
+      throw new BadRequestException(`${label}: duplicate image URLs`);
+    }
+  }
+
+  async createForUser(
+    userId: string,
+    dto: CreateProductFormDto,
+    files: Express.Multer.File[],
+  ) {
+    const validFiles = (files ?? []).filter((f) => f.buffer?.length);
+    if (!validFiles.length) {
+      throw new BadRequestException('At least one product image is required');
+    }
+    if (validFiles.length > MAX_PRODUCT_IMAGES) {
+      throw new BadRequestException(`At most ${MAX_PRODUCT_IMAGES} images per upload`);
+    }
+    const imageUrls: string[] = [];
+    for (const file of validFiles) {
+      imageUrls.push(await this.persistImage(userId, file));
+    }
     await this.validateCategoryIds(dto.categoryIds ?? []);
     const product = await this.prisma.product.create({
       data: {
@@ -103,7 +131,7 @@ export class ProductsService {
         name: dto.name,
         price: new Decimal(dto.price),
         descriptionRaw: dto.descriptionRaw,
-        imageUrl,
+        imageUrls,
         isPublished: dto.isPublished ?? true,
         sku: dto.sku?.trim() || null,
         stockQuantity: dto.stockQuantity ?? 0,
@@ -156,6 +184,60 @@ export class ProductsService {
     return this.serializeProduct(product);
   }
 
+  async appendImagesForUser(userId: string, productId: string, files: Express.Multer.File[]) {
+    const p = await this.getOwnedOrThrow(userId, productId);
+    const validFiles = (files ?? []).filter((f) => f.buffer?.length);
+    if (!validFiles.length) {
+      throw new BadRequestException('At least one image file is required');
+    }
+    const room = MAX_PRODUCT_IMAGES - p.imageUrls.length;
+    if (room <= 0) {
+      throw new BadRequestException(`Maximum ${MAX_PRODUCT_IMAGES} images per product`);
+    }
+    const next = [...p.imageUrls];
+    for (const file of validFiles.slice(0, room)) {
+      next.push(await this.persistImage(userId, file));
+    }
+    const product = await this.prisma.product.update({
+      where: { id: productId },
+      data: { imageUrls: next },
+      include: productInclude,
+    });
+    return this.serializeProduct(product);
+  }
+
+  async duplicateForUser(userId: string, productId: string) {
+    const p = await this.getOwnedOrThrow(userId, productId);
+    const baseName = `Copy of ${p.name}`;
+    const name = baseName.length > 200 ? `${baseName.slice(0, 197)}…` : baseName;
+    const product = await this.prisma.product.create({
+      data: {
+        userId,
+        name,
+        price: p.price,
+        descriptionRaw: p.descriptionRaw,
+        descriptionAi: p.descriptionAi,
+        captionAi: p.captionAi,
+        imageUrls: [...p.imageUrls],
+        isPublished: false,
+        sku: null,
+        stockQuantity: 0,
+        lowStockThreshold: p.lowStockThreshold,
+        featured: false,
+        categories:
+          p.categories.length ?
+            {
+              create: p.categories.map((pc) => ({
+                category: { connect: { id: pc.category.id } },
+              })),
+            }
+          : undefined,
+      },
+      include: productInclude,
+    });
+    return this.serializeProduct(product);
+  }
+
   async updateForUser(
     userId: string,
     productId: string,
@@ -163,12 +245,29 @@ export class ProductsService {
     file?: Express.Multer.File,
   ) {
     await this.getOwnedOrThrow(userId, productId);
-    let imageUrl: string | undefined;
+    let imageUrlsReplace: string[] | undefined;
     if (file?.buffer?.length) {
-      imageUrl = await this.persistImage(userId, file);
+      const u = await this.persistImage(userId, file);
+      imageUrlsReplace = [u];
     }
     if (dto.categoryIds !== undefined) {
       await this.validateCategoryIds(dto.categoryIds);
+    }
+    if (dto.imageUrls !== undefined) {
+      if (dto.imageUrls.length === 0) {
+        throw new BadRequestException('At least one product image is required');
+      }
+      const current = await this.prisma.product.findFirst({
+        where: { id: productId, userId },
+        select: { imageUrls: true },
+      });
+      if (!current) throw new NotFoundException('Product not found');
+      this.validateImageUrlList(dto.imageUrls, 'imageUrls');
+      const allowed = new Set(current.imageUrls);
+      if (!dto.imageUrls.every((u) => allowed.has(u))) {
+        throw new BadRequestException('imageUrls must only include existing images for this product');
+      }
+      imageUrlsReplace = dto.imageUrls;
     }
     const data: Prisma.ProductUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
@@ -181,7 +280,7 @@ export class ProductsService {
     if (dto.stockQuantity !== undefined) data.stockQuantity = dto.stockQuantity;
     if (dto.lowStockThreshold !== undefined) data.lowStockThreshold = dto.lowStockThreshold;
     if (dto.featured !== undefined) data.featured = dto.featured;
-    if (imageUrl !== undefined) data.imageUrl = imageUrl;
+    if (imageUrlsReplace !== undefined) data.imageUrls = imageUrlsReplace;
     if (dto.categoryIds !== undefined) {
       data.categories = {
         deleteMany: {},

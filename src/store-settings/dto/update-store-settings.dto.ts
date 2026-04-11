@@ -26,6 +26,12 @@ export class UpdateStoreSettingsDto {
   @MaxLength(500)
   tagline?: string;
 
+  @ApiPropertyOptional({ description: 'Longer store bio shown on your public page' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()

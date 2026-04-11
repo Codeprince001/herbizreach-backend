@@ -25,6 +25,7 @@ export class StoreSettingsService {
         ...(dto.bannerUrl !== undefined && { bannerUrl: dto.bannerUrl || null }),
         ...(dto.accentColor !== undefined && { accentColor: dto.accentColor || null }),
         ...(dto.tagline !== undefined && { tagline: dto.tagline || null }),
+        ...(dto.description !== undefined && { description: dto.description || null }),
         ...(dto.showChatWidget !== undefined && { showChatWidget: dto.showChatWidget }),
       },
     });

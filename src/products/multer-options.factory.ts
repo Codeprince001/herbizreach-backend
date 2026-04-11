@@ -4,10 +4,12 @@ import { memoryStorage } from 'multer';
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
-export function productImageMulterOptions() {
+export const MAX_PRODUCT_IMAGES = 8;
+
+export function productImageMulterOptions(maxFiles = 1) {
   return {
     storage: memoryStorage(),
-    limits: { fileSize: MAX_BYTES, files: 1 },
+    limits: { fileSize: MAX_BYTES, files: maxFiles },
     fileFilter(
       _req: Express.Request,
       file: Express.Multer.File,
