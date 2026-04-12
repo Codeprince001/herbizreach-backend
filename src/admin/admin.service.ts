@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, UserRole } from '@prisma/client';
+import { ConversationStatus, Prisma, UserRole } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -236,6 +236,15 @@ export class AdminService {
   }
 
   async metrics() {
+    const now = new Date();
+    const from14 = new Date(now);
+    from14.setUTCDate(from14.getUTCDate() - 14);
+    from14.setUTCHours(0, 0, 0, 0);
+    const from7 = new Date(now);
+    from7.setUTCDate(from7.getUTCDate() - 7);
+    const from30 = new Date(now);
+    from30.setUTCDate(from30.getUTCDate() - 30);
+
     const [
       users,
       owners,
@@ -247,6 +256,20 @@ export class AdminService {
       shareEvents,
       conversations,
       leads,
+      unpublishedProducts,
+      featuredProducts,
+      openConversations,
+      messagesTotal,
+      auditLogsTotal,
+      newUsers7d,
+      newUsers30d,
+      newProducts7d,
+      newLeads30d,
+      pageViewsByDay,
+      signupsByDay,
+      productsByDay,
+      messagesByDay,
+      sharesByDay,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: UserRole.OWNER } }),
@@ -258,12 +281,119 @@ export class AdminService {
       this.prisma.shareEvent.count(),
       this.prisma.conversation.count(),
       this.prisma.lead.count(),
+      this.prisma.product.count({ where: { isPublished: false } }),
+      this.prisma.product.count({ where: { featured: true } }),
+      this.prisma.conversation.count({ where: { status: ConversationStatus.OPEN } }),
+      this.prisma.message.count(),
+      this.prisma.auditLog.count(),
+      this.prisma.user.count({ where: { createdAt: { gte: from7 } } }),
+      this.prisma.user.count({ where: { createdAt: { gte: from30 } } }),
+      this.prisma.product.count({ where: { createdAt: { gte: from7 } } }),
+      this.prisma.lead.count({ where: { createdAt: { gte: from30 } } }),
+      this.prisma.$queryRaw<Array<{ d: Date; c: bigint }>>`
+        SELECT ("viewed_at" AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS c
+        FROM "page_views"
+        WHERE "viewed_at" >= ${from14}
+        GROUP BY 1 ORDER BY 1
+      `,
+      this.prisma.$queryRaw<Array<{ d: Date; c: bigint }>>`
+        SELECT ("created_at" AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS c
+        FROM "users"
+        WHERE "created_at" >= ${from14}
+        GROUP BY 1 ORDER BY 1
+      `,
+      this.prisma.$queryRaw<Array<{ d: Date; c: bigint }>>`
+        SELECT ("created_at" AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS c
+        FROM "products"
+        WHERE "created_at" >= ${from14}
+        GROUP BY 1 ORDER BY 1
+      `,
+      this.prisma.$queryRaw<Array<{ d: Date; c: bigint }>>`
+        SELECT ("created_at" AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS c
+        FROM "messages"
+        WHERE "created_at" >= ${from14}
+        GROUP BY 1 ORDER BY 1
+      `,
+      this.prisma.$queryRaw<Array<{ d: Date; c: bigint }>>`
+        SELECT ("created_at" AT TIME ZONE 'UTC')::date AS d, COUNT(*)::bigint AS c
+        FROM "share_events"
+        WHERE "created_at" >= ${from14}
+        GROUP BY 1 ORDER BY 1
+      `,
     ]);
+
+    const seriesLast14Days = this.buildDailySeries14(
+      pageViewsByDay,
+      signupsByDay,
+      productsByDay,
+      messagesByDay,
+      sharesByDay,
+    );
+
     return {
       users: { total: users, owners, customers, admins },
-      products: { total: products, published: publishedProducts },
-      engagement: { pageViews, shareEvents, conversations, leads },
+      products: {
+        total: products,
+        published: publishedProducts,
+        unpublished: unpublishedProducts,
+        featured: featuredProducts,
+      },
+      engagement: {
+        pageViews,
+        shareEvents,
+        conversations,
+        leads,
+        openConversations,
+        messagesTotal,
+      },
+      activity: {
+        auditLogsTotal,
+        newUsers7d,
+        newUsers30d,
+        newProducts7d,
+        newLeads30d,
+      },
+      seriesLast14Days,
     };
+  }
+
+  private buildDailySeries14(
+    pageViews: Array<{ d: Date; c: bigint }>,
+    signups: Array<{ d: Date; c: bigint }>,
+    products: Array<{ d: Date; c: bigint }>,
+    messages: Array<{ d: Date; c: bigint }>,
+    shares: Array<{ d: Date; c: bigint }>,
+  ) {
+    const toKey = (d: Date) => d.toISOString().slice(0, 10);
+    const map = (rows: Array<{ d: Date; c: bigint }>): Record<string, number> => {
+      const out: Record<string, number> = {};
+      for (const r of rows) {
+        out[toKey(r.d)] = Number(r.c);
+      }
+      return out;
+    };
+    const pv = map(pageViews);
+    const su = map(signups);
+    const pr = map(products);
+    const msg = map(messages);
+    const sh = map(shares);
+
+    const days: string[] = [];
+    for (let i = 13; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - i);
+      d.setUTCHours(12, 0, 0, 0);
+      days.push(d.toISOString().slice(0, 10));
+    }
+
+    return days.map((date) => ({
+      date,
+      pageViews: pv[date] ?? 0,
+      signups: su[date] ?? 0,
+      newProducts: pr[date] ?? 0,
+      messages: msg[date] ?? 0,
+      shares: sh[date] ?? 0,
+    }));
   }
 
   async listConversations(page: number, limit: number) {
