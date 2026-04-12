@@ -54,7 +54,8 @@ export class AuthService {
   }
 
   async login(email: string, password: string) {
-    const user = await this.usersService.findByEmail(email);
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const user = await this.usersService.findByEmail(normalizedEmail);
     if (!user) {
       throw new UnauthorizedException('Invalid email or password');
     }
