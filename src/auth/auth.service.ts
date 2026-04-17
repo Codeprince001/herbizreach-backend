@@ -18,7 +18,7 @@ export class AuthService {
     password: string;
     fullName: string;
     businessName: string;
-    phone?: string;
+    phone: string;
   }) {
     const existing = await this.usersService.findByEmail(dto.email);
     if (existing) {
