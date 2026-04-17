@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UploadedFile,
   UploadedFiles,
   UseGuards,
@@ -27,6 +28,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
 import { CreateProductFormDto } from './dto/create-product-form.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpsertProductTranslationDto } from './dto/upsert-product-translation.dto';
 import { MAX_PRODUCT_IMAGES, productImageMulterOptions } from './multer-options.factory';
 import { ProductsService } from './products.service';
 
@@ -101,6 +103,27 @@ export class ProductsController {
   @ApiOperation({ summary: 'List products for current user' })
   async list(@CurrentUser() user: JwtPayloadUser) {
     return this.productsService.listForUser(user.sub);
+  }
+
+  @Put(':id/translations/:localeCode')
+  @ApiOperation({ summary: 'Upsert localized name + description for a product' })
+  async upsertTranslation(
+    @CurrentUser() user: JwtPayloadUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('localeCode') localeCode: string,
+    @Body() body: UpsertProductTranslationDto,
+  ) {
+    return this.productsService.upsertTranslationForUser(user.sub, id, localeCode, body);
+  }
+
+  @Delete(':id/translations/:localeCode')
+  @ApiOperation({ summary: 'Remove localized copy for one language' })
+  async deleteTranslation(
+    @CurrentUser() user: JwtPayloadUser,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Param('localeCode') localeCode: string,
+  ) {
+    return this.productsService.deleteTranslationForUser(user.sub, id, localeCode);
   }
 
   @Get(':id')
