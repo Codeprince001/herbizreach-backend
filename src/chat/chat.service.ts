@@ -9,12 +9,16 @@ import {
   UserRole,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   private async getOwnerBySlug(slug: string) {
     const owner = await this.prisma.user.findFirst({
@@ -227,6 +231,11 @@ export class ChatService {
       where: { id: conversationId },
       data: { lastMessageAt: new Date() },
     });
+    if (senderType === MessageSenderType.GUEST || senderType === MessageSenderType.CUSTOMER) {
+      void this.notifications
+        .notifyStoreInboundChat(conv.storeUserId, conversationId, body.trim())
+        .catch(() => undefined);
+    }
     return msg;
   }
 
