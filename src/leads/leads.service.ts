@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeadDto } from '../store/dto/create-lead.dto';
 
 @Injectable()
 export class LeadsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   async createForStoreSlug(slug: string, dto: CreateLeadDto) {
     const owner = await this.prisma.user.findFirst({
@@ -30,7 +34,7 @@ export class LeadsService {
         throw new NotFoundException('Product not found on this store');
       }
     }
-    return this.prisma.lead.create({
+    const lead = await this.prisma.lead.create({
       data: {
         storeUserId: owner.id,
         productId: dto.productId ?? null,
@@ -39,6 +43,15 @@ export class LeadsService {
         message: dto.message?.trim() || null,
       },
     });
+    void this.notifications
+      .notifyNewLead(owner.id, {
+        id: lead.id,
+        name: lead.name,
+        phone: lead.phone,
+        productId: lead.productId,
+      })
+      .catch(() => undefined);
+    return lead;
   }
 
   async listForOwner(userId: string) {

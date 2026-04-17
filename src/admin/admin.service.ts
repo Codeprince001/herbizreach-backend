@@ -6,13 +6,16 @@ import {
 import { ConversationStatus, Prisma, UserRole } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { AuditService } from '../audit/audit.service';
+import { LocalesService } from '../locales/locales.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
+import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
 import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 
 const productInclude = {
   categories: { include: { category: true } },
+  translations: { orderBy: { localeCode: 'asc' as const } },
 } as const;
 
 @Injectable()
@@ -21,7 +24,24 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly productsService: ProductsService,
+    private readonly localesService: LocalesService,
   ) {}
+
+  async listPlatformLocales() {
+    return this.localesService.getAllLocalesForAdmin();
+  }
+
+  async setPlatformLocaleEnabled(actorId: string, code: string, isEnabled: boolean) {
+    const row = await this.localesService.setLocaleEnabled(code, isEnabled);
+    await this.audit.log({
+      actorUserId: actorId,
+      action: 'platform_locale.update',
+      entityType: 'platform_locale',
+      entityId: code,
+      metadata: JSON.parse(JSON.stringify({ isEnabled })) as Prisma.InputJsonValue,
+    });
+    return row;
+  }
 
   async listUsers(
     page: number,
@@ -270,6 +290,8 @@ export class AdminService {
       productsByDay,
       messagesByDay,
       sharesByDay,
+      categoriesTotal,
+      categoriesNew7d,
     ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.user.count({ where: { role: UserRole.OWNER } }),
@@ -320,6 +342,8 @@ export class AdminService {
         WHERE "created_at" >= ${from14}
         GROUP BY 1 ORDER BY 1
       `,
+      this.prisma.category.count(),
+      this.prisma.category.count({ where: { createdAt: { gte: from7 } } }),
     ]);
 
     const seriesLast14Days = this.buildDailySeries14(
@@ -353,8 +377,104 @@ export class AdminService {
         newProducts7d,
         newLeads30d,
       },
+      categories: {
+        total: categoriesTotal,
+        newLast7Days: categoriesNew7d,
+      },
       seriesLast14Days,
     };
+  }
+
+  async listCategoriesWithStats() {
+    const from7 = new Date();
+    from7.setUTCDate(from7.getUTCDate() - 7);
+    from7.setUTCHours(0, 0, 0, 0);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        slug: string;
+        name: string;
+        created_at: Date;
+        product_count: bigint;
+        published_product_count: bigint;
+        page_views_total: bigint;
+        share_events_total: bigint;
+        page_views_7d: bigint;
+        new_products_7d: bigint;
+      }>
+    >(Prisma.sql`
+      SELECT
+        c.id,
+        c.slug,
+        c.name,
+        c.created_at,
+        COUNT(DISTINCT pc.product_id)::bigint AS product_count,
+        COUNT(DISTINCT CASE WHEN p.is_published THEN pc.product_id END)::bigint AS published_product_count,
+        COUNT(DISTINCT pv.id)::bigint AS page_views_total,
+        COUNT(DISTINCT se.id)::bigint AS share_events_total,
+        COUNT(DISTINCT CASE WHEN pv.viewed_at >= ${from7} THEN pv.id END)::bigint AS page_views_7d,
+        COUNT(DISTINCT CASE WHEN p.created_at >= ${from7} THEN pc.product_id END)::bigint AS new_products_7d
+      FROM categories c
+      LEFT JOIN product_categories pc ON pc.category_id = c.id
+      LEFT JOIN products p ON p.id = pc.product_id
+      LEFT JOIN page_views pv ON pv.product_id = p.id
+      LEFT JOIN share_events se ON se.product_id = p.id
+      GROUP BY c.id, c.slug, c.name, c.created_at
+      ORDER BY c.name ASC
+    `);
+
+    const items = rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      name: r.name,
+      createdAt: r.created_at,
+      stats: {
+        productCount: Number(r.product_count),
+        publishedProductCount: Number(r.published_product_count),
+        pageViewsTotal: Number(r.page_views_total),
+        shareEventsTotal: Number(r.share_events_total),
+        pageViewsLast7Days: Number(r.page_views_7d),
+        newProductsLast7Days: Number(r.new_products_7d),
+      },
+    }));
+
+    return { items };
+  }
+
+  async createCategory(actorId: string, dto: AdminCreateCategoryDto) {
+    const slugSource = dto.slug?.trim() ? dto.slug : dto.name;
+    const slug = this.slugifyCategorySlug(slugSource);
+    if (slug.length < 2) {
+      throw new BadRequestException('Slug is too short; use a clearer name or slug.');
+    }
+    const taken = await this.prisma.category.findUnique({ where: { slug } });
+    if (taken) {
+      throw new BadRequestException('A category with this slug already exists');
+    }
+    const name = dto.name.trim();
+    const cat = await this.prisma.category.create({
+      data: { slug, name },
+      select: { id: true, slug: true, name: true, createdAt: true },
+    });
+    await this.audit.log({
+      actorUserId: actorId,
+      action: 'category.create',
+      entityType: 'category',
+      entityId: cat.id,
+      metadata: JSON.parse(JSON.stringify({ slug: cat.slug, name: cat.name })) as Prisma.InputJsonValue,
+    });
+    return cat;
+  }
+
+  private slugifyCategorySlug(raw: string): string {
+    const s = raw
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return s.slice(0, 80);
   }
 
   private buildDailySeries14(

@@ -5,18 +5,22 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Prisma, Product } from '@prisma/client';
+import { TranslationSource } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { LocalesService } from '../locales/locales.service';
 import { CreateProductFormDto } from './dto/create-product-form.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpsertProductTranslationDto } from './dto/upsert-product-translation.dto';
 import { MAX_PRODUCT_IMAGES } from './multer-options.factory';
 
 const productInclude = {
   categories: { include: { category: true } },
+  translations: { orderBy: { localeCode: 'asc' as const } },
 } as const;
 
 type ProductWithCats = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
@@ -27,6 +31,7 @@ export class ProductsService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly localesService: LocalesService,
   ) {}
 
   private productsDir(): string {
@@ -69,14 +74,51 @@ export class ProductsService {
     );
   }
 
+  private defaultDisplayDescription(p: {
+    descriptionAi: string | null;
+    descriptionRaw: string;
+  }) {
+    return p.descriptionAi?.trim() || p.descriptionRaw?.trim() || '';
+  }
+
+  /** Public storefront: add displayName / displayDescription using optional translation row. */
+  applyPublicLocaleToSerialized(
+    serialized: {
+      name: string;
+      descriptionRaw: string;
+      descriptionAi: string | null;
+      [key: string]: unknown;
+    },
+    translation: { name: string; description: string } | null | undefined,
+  ) {
+    return {
+      ...serialized,
+      displayName: translation?.name ?? serialized.name,
+      displayDescription:
+        translation?.description ?? this.defaultDisplayDescription(serialized),
+    };
+  }
+
   serializeProduct(p: ProductWithCats | Product) {
     const imageUrls = Array.isArray(p.imageUrls) ? [...p.imageUrls] : [];
     const price = p.price;
+    const translations =
+      'translations' in p && Array.isArray(p.translations) ?
+        p.translations.map((t) => ({
+          localeCode: t.localeCode,
+          name: t.name,
+          description: t.description,
+          nameSource: t.nameSource,
+          descriptionSource: t.descriptionSource,
+          updatedAt: t.updatedAt.toISOString(),
+        }))
+      : [];
     const base = {
       ...p,
       price: price.toString(),
       imageUrls,
       imageUrl: imageUrls[0] ?? '',
+      translations,
     };
     if ('categories' in p && p.categories) {
       return {
@@ -235,7 +277,23 @@ export class ProductsService {
       },
       include: productInclude,
     });
-    return this.serializeProduct(product);
+    if (p.translations.length) {
+      await this.prisma.productTranslation.createMany({
+        data: p.translations.map((t) => ({
+          productId: product.id,
+          localeCode: t.localeCode,
+          name: t.name,
+          description: t.description,
+          nameSource: t.nameSource,
+          descriptionSource: t.descriptionSource,
+        })),
+      });
+    }
+    const withTrans = await this.prisma.product.findFirst({
+      where: { id: product.id },
+      include: productInclude,
+    });
+    return this.serializeProduct(withTrans!);
   }
 
   async updateForUser(
@@ -304,5 +362,47 @@ export class ProductsService {
     await this.getOwnedOrThrow(userId, productId);
     await this.prisma.product.delete({ where: { id: productId } });
     return { deleted: true };
+  }
+
+  async upsertTranslationForUser(
+    userId: string,
+    productId: string,
+    localeCode: string,
+    dto: UpsertProductTranslationDto,
+  ) {
+    await this.getOwnedOrThrow(userId, productId);
+    const code = this.localesService.validateLocaleCode(localeCode);
+    await this.localesService.assertLocaleEnabledForWrite(code);
+    const nameSource = dto.nameSource ?? TranslationSource.MANUAL;
+    const descriptionSource = dto.descriptionSource ?? TranslationSource.MANUAL;
+    await this.prisma.productTranslation.upsert({
+      where: {
+        productId_localeCode: { productId, localeCode: code },
+      },
+      create: {
+        productId,
+        localeCode: code,
+        name: dto.name.trim(),
+        description: dto.description.trim(),
+        nameSource,
+        descriptionSource,
+      },
+      update: {
+        name: dto.name.trim(),
+        description: dto.description.trim(),
+        nameSource,
+        descriptionSource,
+      },
+    });
+    return this.findByIdForUser(userId, productId);
+  }
+
+  async deleteTranslationForUser(userId: string, productId: string, localeCode: string) {
+    await this.getOwnedOrThrow(userId, productId);
+    const code = this.localesService.validateLocaleCode(localeCode);
+    await this.prisma.productTranslation.deleteMany({
+      where: { productId, localeCode: code },
+    });
+    return this.findByIdForUser(userId, productId);
   }
 }

@@ -212,7 +212,9 @@ All routes: **JWT** + role **`ADMIN`**.
 | `GET`  | `/admin/products/:id`             | — |
 | `PATCH`| `/admin/products/:id`              | JSON: optional `name`, `price`, `isPublished`, `featured` |
 | `DELETE`| `/admin/products/:id`            | — |
-| `GET`  | `/admin/metrics`                   | Platform metrics |
+| `GET`  | `/admin/metrics`                   | Platform metrics (includes `categories.total` and `categories.newLast7Days`) |
+| `GET`  | `/admin/categories`                | Categories with per-row usage stats (products, views, shares, 7-day windows) |
+| `POST` | `/admin/categories`                | JSON: `name`, optional `slug` (generated from name if omitted) |
 | `GET`  | `/admin/conversations`             | `page`, `limit` |
 | `GET`  | `/admin/conversations/:id/messages`| `page`, `limit` (default limit 50) |
 | `GET`  | `/admin/audit-logs`                | `page`, `limit`, optional `actorUserId`, `entityType` |

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ChatController } from './chat.controller';
@@ -10,6 +11,7 @@ import { ChatService } from './chat.service';
 @Module({
   imports: [
     UsersModule,
+    NotificationsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

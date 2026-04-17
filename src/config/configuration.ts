@@ -24,7 +24,12 @@ export default () => ({
     folder: process.env.CLOUDINARY_FOLDER ?? 'herbizreach',
   },
   redisUrl: process.env.REDIS_URL ?? '',
-  /** Product description AI via OpenRouter (https://openrouter.ai). */
+  /** Product description AI via Google Gemini. */
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY ?? '',
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+  },
+  /** Legacy provider config kept temporarily while testing Gemini. */
   openrouter: {
     apiKey: process.env.OPENROUTER_API_KEY ?? '',
     model: process.env.OPENROUTER_MODEL ?? 'openai/gpt-4o-mini',

@@ -14,6 +14,14 @@ export class UpdateStoreSettingsDto {
   @MaxLength(2000)
   bannerUrl?: string;
 
+  @ApiPropertyOptional({
+    description: 'Square store photo for your page and social previews. Omit to leave unchanged.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  profileImageUrl?: string;
+
   @ApiPropertyOptional({ example: '#7c3aed' })
   @IsOptional()
   @IsString()

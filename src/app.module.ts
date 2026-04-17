@@ -14,6 +14,8 @@ import configuration from './config/configuration';
 import { validateEnv } from './config/env.validation';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { HealthController } from './health/health.controller';
+import { LocalesModule } from './locales/locales.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { StoreModule } from './store/store.module';
@@ -36,6 +38,7 @@ import { UsersModule } from './users/users.module';
       ],
     }),
     PrismaModule,
+    LocalesModule,
     CloudinaryModule,
     AuditModule,
     UsersModule,
@@ -45,6 +48,7 @@ import { UsersModule } from './users/users.module';
     StoreModule,
     StoreSettingsModule,
     ChatModule,
+    NotificationsModule,
     AiModule,
     AnalyticsModule,
     AdminModule,

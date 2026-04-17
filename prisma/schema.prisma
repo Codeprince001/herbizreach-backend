@@ -25,6 +25,29 @@ enum MessageSenderType {
   SYSTEM
 }
 
+enum NotificationType {
+  SYSTEM
+  LEAD
+  CHAT
+  PRODUCT
+  STORE
+  SECURITY
+  BILLING
+  MARKETING
+}
+
+enum NotificationSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum TranslationSource {
+  AI
+  MANUAL
+}
+
 model User {
   id              String    @id @default(uuid()) @db.Uuid
   email           String    @unique
@@ -48,23 +71,76 @@ model User {
   messages              Message[]
   auditLogs             AuditLog[]       @relation("AuditActor")
   leadsReceived         Lead[]           @relation("LeadStore")
+  notifications         Notification[]
 
   @@index([role])
   @@map("users")
 }
 
 model StoreSettings {
-  id             String   @id @default(uuid()) @db.Uuid
-  userId         String   @unique @map("user_id") @db.Uuid
-  whatsAppPhone  String?  @map("whatsapp_phone")
-  bannerUrl      String?  @map("banner_url")
-  accentColor    String?  @map("accent_color")
-  tagline        String?
-  description    String?
-  showChatWidget Boolean  @default(true) @map("show_chat_widget")
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  whatsAppPhone    String?  @map("whatsapp_phone")
+  bannerUrl        String?  @map("banner_url")
+  profileImageUrl  String?  @map("profile_image_url")
+  accentColor      String?  @map("accent_color")
+  tagline          String?
+  description      String?
+  showChatWidget   Boolean  @default(true) @map("show_chat_widget")
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  translations StoreSettingsTranslation[]
 
   @@map("store_settings")
+}
+
+/// Admin-curated optional storefront languages (canonical catalog copy stays in English on Product / StoreSettings).
+model PlatformLocale {
+  code          String  @id
+  labelEnglish  String  @map("label_english")
+  labelNative   String  @map("label_native")
+  isEnabled     Boolean @default(true) @map("is_enabled")
+  sortOrder     Int     @default(0) @map("sort_order")
+
+  productTranslations ProductTranslation[]
+  storeTranslations   StoreSettingsTranslation[]
+
+  @@map("platform_locales")
+}
+
+model ProductTranslation {
+  id                String            @id @default(uuid()) @db.Uuid
+  productId         String            @map("product_id") @db.Uuid
+  localeCode        String            @map("locale_code")
+  name              String
+  description       String            @db.Text
+  nameSource        TranslationSource @map("name_source")
+  descriptionSource TranslationSource @map("description_source")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locale  PlatformLocale @relation(fields: [localeCode], references: [code], onDelete: Restrict)
+
+  @@unique([productId, localeCode])
+  @@index([localeCode])
+  @@map("product_translations")
+}
+
+model StoreSettingsTranslation {
+  id                String             @id @default(uuid()) @db.Uuid
+  storeSettingsId   String             @map("store_settings_id") @db.Uuid
+  localeCode        String             @map("locale_code")
+  tagline           String?            @db.Text
+  description       String?            @db.Text
+  taglineSource     TranslationSource? @map("tagline_source")
+  descriptionSource TranslationSource? @map("description_source")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  storeSettings StoreSettings  @relation(fields: [storeSettingsId], references: [id], onDelete: Cascade)
+  locale        PlatformLocale @relation(fields: [localeCode], references: [code], onDelete: Restrict)
+
+  @@unique([storeSettingsId, localeCode])
+  @@index([localeCode])
+  @@map("store_settings_translations")
 }
 
 model Category {
@@ -109,6 +185,7 @@ model Product {
   categories  ProductCategory[]
   leads          Lead[]
   conversations  Conversation[]
+  translations   ProductTranslation[]
 
   @@index([userId])
   @@index([featured])
@@ -211,4 +288,27 @@ model Lead {
 
   @@index([storeUserId, createdAt])
   @@map("leads")
+}
+
+model Notification {
+  id          String                 @id @default(uuid()) @db.Uuid
+  userId      String                 @map("user_id") @db.Uuid
+  type        NotificationType
+  severity    NotificationSeverity   @default(INFO)
+  title       String
+  body        String?                @db.Text
+  actionUrl   String?                @map("action_url")
+  entityType  String?                @map("entity_type")
+  entityId    String?                @map("entity_id") @db.Uuid
+  metadata    Json?
+  readAt      DateTime?              @map("read_at")
+  archivedAt  DateTime?              @map("archived_at")
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+  @@index([userId, archivedAt])
+  @@map("notifications")
 }

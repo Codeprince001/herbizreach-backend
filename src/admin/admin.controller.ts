@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
 import { AdminService } from './admin.service';
+import { AdminCreateCategoryDto } from './dto/admin-create-category.dto';
+import { AdminPatchPlatformLocaleDto } from './dto/admin-patch-platform-locale.dto';
 import { AdminUpdateProductDto } from './dto/admin-update-product.dto';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
@@ -97,6 +100,37 @@ export class AdminController {
   @ApiOperation({ summary: 'Platform-wide metrics' })
   async metrics() {
     return this.adminService.metrics();
+  }
+
+  @Get('locales')
+  @ApiOperation({ summary: 'Optional storefront languages (enable/disable for all sellers)' })
+  async listLocales() {
+    return this.adminService.listPlatformLocales();
+  }
+
+  @Patch('locales/:code')
+  @ApiOperation({ summary: 'Enable or disable a language for new translations and public picker' })
+  async patchLocale(
+    @CurrentUser() actor: JwtPayloadUser,
+    @Param('code') code: string,
+    @Body() dto: AdminPatchPlatformLocaleDto,
+  ) {
+    return this.adminService.setPlatformLocaleEnabled(actor.sub, code, dto.isEnabled);
+  }
+
+  @Get('categories')
+  @ApiOperation({ summary: 'List categories with usage and engagement stats' })
+  async listCategoriesWithStats() {
+    return this.adminService.listCategoriesWithStats();
+  }
+
+  @Post('categories')
+  @ApiOperation({ summary: 'Create a product category' })
+  async createCategory(
+    @CurrentUser() actor: JwtPayloadUser,
+    @Body() dto: AdminCreateCategoryDto,
+  ) {
+    return this.adminService.createCategory(actor.sub, dto);
   }
 
   @Get('conversations')

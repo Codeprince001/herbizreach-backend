@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { LocalesService } from '../locales/locales.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProductsService } from '../products/products.service';
 
@@ -12,9 +13,11 @@ export class StoreService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly productsService: ProductsService,
+    private readonly localesService: LocalesService,
   ) {}
 
-  async getPublicStoreBySlug(slug: string) {
+  async getPublicStoreBySlug(slug: string, locale?: string) {
+    const localeApplied = await this.localesService.resolvePublicLocale(locale);
     const owner = await this.prisma.user.findFirst({
       where: {
         businessSlug: slug,
@@ -34,18 +37,66 @@ export class StoreService {
     if (!owner) {
       throw new NotFoundException('Store not found');
     }
-    const [products, storeSettings] = await Promise.all([
+    const [products, storeSettings, activeLocales] = await Promise.all([
       this.prisma.product.findMany({
         where: { userId: owner.id, isPublished: true },
         orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
         include: productInclude,
       }),
       this.prisma.storeSettings.findUnique({ where: { userId: owner.id } }),
+      this.localesService.getActiveLocalesPublic(),
     ]);
+
+    let storeTranslation:
+      | { tagline: string | null; description: string | null }
+      | null = null;
+    if (localeApplied && storeSettings) {
+      storeTranslation = await this.prisma.storeSettingsTranslation.findUnique({
+        where: {
+          storeSettingsId_localeCode: {
+            storeSettingsId: storeSettings.id,
+            localeCode: localeApplied,
+          },
+        },
+        select: { tagline: true, description: true },
+      });
+    }
+
+    const productIds = products.map((p) => p.id);
+    const productTranslations =
+      localeApplied && productIds.length ?
+        await this.prisma.productTranslation.findMany({
+          where: { localeCode: localeApplied, productId: { in: productIds } },
+        })
+      : [];
+    const transByProduct = new Map(
+      productTranslations.map((t) => [t.productId, t] as const),
+    );
+
+    const mergedStoreSettings =
+      storeSettings && localeApplied && storeTranslation ?
+        {
+          ...storeSettings,
+          tagline: storeTranslation.tagline?.trim() || storeSettings.tagline,
+          description:
+            storeTranslation.description?.trim() || storeSettings.description,
+        }
+      : storeSettings;
+
     return {
       business: owner,
-      storeSettings,
-      products: products.map((p) => this.productsService.serializeProduct(p)),
+      storeSettings: mergedStoreSettings,
+      products: products.map((p) => {
+        const ser = this.productsService.serializeProduct(p);
+        const tr = transByProduct.get(p.id);
+        const overlay =
+          localeApplied && tr ?
+            { name: tr.name, description: tr.description }
+          : null;
+        return this.productsService.applyPublicLocaleToSerialized(ser, overlay);
+      }),
+      locale: localeApplied,
+      activeLocales,
     };
   }
 
@@ -117,7 +168,8 @@ export class StoreService {
     return { logged: true };
   }
 
-  async getPublicProduct(slug: string, productId: string) {
+  async getPublicProduct(slug: string, productId: string, locale?: string) {
+    const localeApplied = await this.localesService.resolvePublicLocale(locale);
     const owner = await this.prisma.user.findFirst({
       where: {
         businessSlug: slug,
@@ -140,9 +192,23 @@ export class StoreService {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+    const activeLocales = await this.localesService.getActiveLocalesPublic();
+    let tr =
+      localeApplied ?
+        await this.prisma.productTranslation.findUnique({
+          where: {
+            productId_localeCode: { productId, localeCode: localeApplied },
+          },
+        })
+      : null;
+    const ser = this.productsService.serializeProduct(product);
+    const overlay =
+      localeApplied && tr ? { name: tr.name, description: tr.description } : null;
     return {
       business: owner,
-      product: this.productsService.serializeProduct(product),
+      product: this.productsService.applyPublicLocaleToSerialized(ser, overlay),
+      locale: localeApplied,
+      activeLocales,
     };
   }
 }
