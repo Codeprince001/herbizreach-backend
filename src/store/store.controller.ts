@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { LeadsService } from '../leads/leads.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -22,8 +22,9 @@ export class StoreController {
   async getProduct(
     @Param('slug') slug: string,
     @Param('productId') productId: string,
+    @Query('locale') locale?: string,
   ) {
-    return this.storeService.getPublicProduct(slug, productId);
+    return this.storeService.getPublicProduct(slug, productId, locale);
   }
 
   @Public()
@@ -36,8 +37,8 @@ export class StoreController {
   @Public()
   @Get(':slug')
   @ApiOperation({ summary: 'Public business page payload' })
-  async getStore(@Param('slug') slug: string) {
-    return this.storeService.getPublicStoreBySlug(slug);
+  async getStore(@Param('slug') slug: string, @Query('locale') locale?: string) {
+    return this.storeService.getPublicStoreBySlug(slug, locale);
   }
 
   @Public()
