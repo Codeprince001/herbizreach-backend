@@ -30,10 +30,13 @@ async function bootstrap() {
     if (!existsSync(join(uploadAbs, 'products'))) {
       mkdirSync(join(uploadAbs, 'products'), { recursive: true });
     }
+    if (!existsSync(join(uploadAbs, 'store-profiles'))) {
+      mkdirSync(join(uploadAbs, 'store-profiles'), { recursive: true });
+    }
     app.useStaticAssets(uploadAbs, { prefix: '/files/' });
   }
 
-  const corsOrigins = config.get<string[]>('corsOrigins') ?? ['http://localhost:3000,https://herbizreach.vercel.app'];
+  const corsOrigins = config.get<string[]>('corsOrigins') ?? ['http://localhost:3001,https://herbizreach.vercel.app, http://localhost*'];
   app.enableCors({
     origin: corsOrigins,
     credentials: true,
@@ -81,6 +84,7 @@ async function bootstrap() {
       .addTag('chat')
       .addTag('admin')
       .addTag('leads')
+      .addTag('notifications')
       .build();
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('api/docs', app, document, {
