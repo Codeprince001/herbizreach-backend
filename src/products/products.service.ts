@@ -226,6 +226,50 @@ export class ProductsService {
     return this.serializeProduct(product);
   }
 
+  /** Load image bytes from a public URL (e.g. Cloudinary or local /files URL). */
+  async fetchImageBufferForUrl(imageUrl: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const res = await fetch(imageUrl, { redirect: 'follow' });
+    if (!res.ok) {
+      throw new BadRequestException(`Could not load image (${res.status})`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const mime = res.headers.get('content-type')?.split(';')[0]?.trim() ?? 'image/jpeg';
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException('URL did not return an image');
+    }
+    return { buffer: buf, mimeType: mime };
+  }
+
+  /**
+   * Replace one existing image URL with a newly uploaded buffer (same slot in imageUrls).
+   */
+  async replaceProductImageAtUrl(
+    userId: string,
+    productId: string,
+    oldUrl: string,
+    newBuffer: Buffer,
+    mimeType: string,
+  ) {
+    const p = await this.getOwnedOrThrow(userId, productId);
+    const idx = p.imageUrls.indexOf(oldUrl);
+    if (idx < 0) {
+      throw new BadRequestException('Image URL is not part of this product');
+    }
+    if (!newBuffer.length) {
+      throw new BadRequestException('Enhanced image is empty');
+    }
+    const file = { buffer: newBuffer, mimetype: mimeType } as Express.Multer.File;
+    const newUrl = await this.persistImage(userId, file);
+    const next = [...p.imageUrls];
+    next[idx] = newUrl;
+    const product = await this.prisma.product.update({
+      where: { id: productId },
+      data: { imageUrls: next },
+      include: productInclude,
+    });
+    return this.serializeProduct(product);
+  }
+
   async appendImagesForUser(userId: string, productId: string, files: Express.Multer.File[]) {
     const p = await this.getOwnedOrThrow(userId, productId);
     const validFiles = (files ?? []).filter((f) => f.buffer?.length);

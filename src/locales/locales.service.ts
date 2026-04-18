@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-const LOCALE_CODE_PATTERN = /^[a-z]{2}(-[a-z0-9]{2,8})?$/;
+const LOCALE_CODE_PATTERN = /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/;
 
 @Injectable()
 export class LocalesService {

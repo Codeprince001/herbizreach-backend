@@ -28,6 +28,8 @@ export default () => ({
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+    /** Imagen model for product image enhancement (`models.editImage`, not `generateContent`). */
+    imageModel: process.env.GEMINI_IMAGE_MODEL ?? 'gemini-2.5-flash-image',
   },
   /** Legacy provider config kept temporarily while testing Gemini. */
   openrouter: {

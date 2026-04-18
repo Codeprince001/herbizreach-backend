@@ -6,6 +6,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
+import { EnhanceProductImageDto } from './dto/enhance-product-image.dto';
 import { ImproveDescriptionDto } from './dto/improve-description.dto';
 import { LocalizeProductDto } from './dto/localize-product.dto';
 import { SuggestInboxRepliesDto } from './dto/suggest-inbox-replies.dto';
@@ -19,6 +20,19 @@ import { AiService } from './ai.service';
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
+
+  @Throttle({ default: { limit: 8, ttl: 60000 } })
+  @Post('enhance-product-image')
+  @ApiOperation({
+    summary:
+      'AI-enhance one product photo (lighting, clarity, cleaner background) and replace that image URL',
+  })
+  async enhanceProductImage(
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() body: EnhanceProductImageDto,
+  ) {
+    return this.aiService.enhanceProductImage(user.sub, body);
+  }
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('localize-product')
