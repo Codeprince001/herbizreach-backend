@@ -1,15 +1,23 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
+  Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
 import type { JwtPayloadUser } from '../auth/types/jwt-payload.type';
+import { RegisterFcmTokenDto } from './dto/register-fcm-token.dto';
+import { FcmService } from './fcm.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { NotificationsService } from './notifications.service';
 
@@ -17,7 +25,10 @@ import { NotificationsService } from './notifications.service';
 @ApiBearerAuth('JWT')
 @Controller('notifications')
 export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
+  constructor(
+    private readonly notificationsService: NotificationsService,
+    private readonly fcmService: FcmService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List your notifications (paginated)' })
@@ -32,6 +43,38 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Unread notification count (non-archived)' })
   async unreadCount(@CurrentUser() user: JwtPayloadUser) {
     return this.notificationsService.unreadCount(user.sub);
+  }
+
+  @Get('push-status')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Whether server-side FCM (Firebase Admin) is configured' })
+  pushStatus() {
+    return { fcmEnabled: this.fcmService.isEnabled() };
+  }
+
+  @Post('push-tokens')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Register FCM device token for chat push (store owner)' })
+  async registerPushToken(
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() dto: RegisterFcmTokenDto,
+  ) {
+    await this.fcmService.registerToken(user.sub, dto.token);
+    return { ok: true as const };
+  }
+
+  @Post('push-tokens/unregister')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.OWNER)
+  @ApiOperation({ summary: 'Remove FCM token (e.g. logout or disable notifications)' })
+  async unregisterPushToken(
+    @CurrentUser() user: JwtPayloadUser,
+    @Body() dto: RegisterFcmTokenDto,
+  ) {
+    await this.fcmService.unregisterToken(user.sub, dto.token);
+    return { ok: true as const };
   }
 
   @Patch('read-all')

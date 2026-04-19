@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationSeverity, NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { FcmService } from './fcm.service';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 
 export type CreateNotificationInput = {
@@ -17,7 +18,10 @@ export type CreateNotificationInput = {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fcm: FcmService,
+  ) {}
 
   async create(input: CreateNotificationInput) {
     return this.prisma.notification.create({
@@ -186,5 +190,13 @@ export class NotificationsService {
       entityId: conversationId,
       metadata: { conversationId },
     });
+    await this.fcm
+      .sendPushForStoreInboundChat(
+        storeUserId,
+        conversationId,
+        'New chat message',
+        preview || 'Open Messages to reply.',
+      )
+      .catch(() => undefined);
   }
 }
