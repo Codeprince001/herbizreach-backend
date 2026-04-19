@@ -84,6 +84,14 @@ export class UsersService {
     return bcrypt.compare(plain, passwordHash);
   }
 
+  async updatePassword(userId: string, newPassword: string): Promise<void> {
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+  }
+
   toPublicProfile(user: User) {
     const { passwordHash: _, ...rest } = user;
     return rest;

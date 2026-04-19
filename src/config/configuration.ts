@@ -28,8 +28,9 @@ export default () => ({
   gemini: {
     apiKey: process.env.GEMINI_API_KEY ?? '',
     model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-    /** Imagen model for product image enhancement (`models.editImage`, not `generateContent`). */
-    imageModel: process.env.GEMINI_IMAGE_MODEL ?? 'gemini-2.5-flash-image',
+    /** Model for product image enhancement (Gemini image generation / editing). */
+    imageModel:
+      process.env.GEMINI_IMAGE_MODEL ?? 'gemini-2.5-flash-image',
   },
   /** Legacy provider config kept temporarily while testing Gemini. */
   openrouter: {
@@ -52,5 +53,19 @@ export default () => ({
   adminBootstrap: {
     email: (process.env.ADMIN_BOOTSTRAP_EMAIL ?? '').toLowerCase().trim(),
     password: process.env.ADMIN_BOOTSTRAP_PASSWORD ?? '',
+  },
+  /** Public site URL for email links (no trailing slash). */
+  appPublicUrl: (process.env.APP_PUBLIC_URL ?? 'http://localhost:3000').replace(/\/$/, ''),
+  sendgrid: {
+    apiKey: process.env.SENDGRID_API_KEY ?? '',
+    fromEmail: process.env.SENDGRID_FROM_EMAIL ?? '',
+    fromName: process.env.SENDGRID_FROM_NAME ?? 'HerBizReach',
+  },
+  /** Firebase Admin (server). Use JSON or split vars — see FIREBASE_PUSH.md */
+  firebase: {
+    serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? '',
+    projectId: process.env.FIREBASE_PROJECT_ID ?? '',
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL ?? '',
+    privateKey: (process.env.FIREBASE_PRIVATE_KEY ?? '').replace(/\\n/g, '\n'),
   },
 });

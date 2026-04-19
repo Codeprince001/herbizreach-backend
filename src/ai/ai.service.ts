@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MessageSenderType } from '@prisma/client';
-import { EditMode, GoogleGenAI, RawReferenceImage } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { sanitizeForAiPrompt } from '../common/utils/sanitize-prompt.util';
 import { LocalesService } from '../locales/locales.service';
 import { ProductsService } from '../products/products.service';
@@ -370,7 +370,7 @@ Rules:
   }
 
   /**
-   * Uses Imagen 3 editing (Vertex/Gemini API `editImage`) to polish a product photo, then replaces that image URL in-place.
+   * Uses Gemini image generation to polish a product photo, then replaces that image URL in-place.
    */
   async enhanceProductImage(
     ownerUserId: string,
@@ -402,43 +402,49 @@ Rules:
       if (e instanceof BadRequestException) throw e;
       throw new BadRequestException('Could not load image');
     }
-    const maxIn = 10 * 1024 * 1024;
+    const maxIn = 7 * 1024 * 1024;
     if (buffer.length > maxIn) {
-      throw new BadRequestException('Image is too large (max 10 MB for enhancement)');
+      throw new BadRequestException('Image is too large (max 7 MB for enhancement)');
     }
     const model =
-      this.config.get<string>('gemini.imageModel') ?? 'imagen-3.0-capability-002';
+      this.config.get<string>('gemini.imageModel') ??
+      'gemini-2.0-flash-preview-image-generation';
 
-    const prompt = `Enhance image [1] for an e-commerce product listing: improve lighting, clarity, and sharpness; use a clean soft neutral studio background if the background is messy or distracting. Keep the product accurate to the reference. Do not add text, logos, or watermarks.`;
+    const prompt = `Enhance this product photograph for an online store listing.
+Keep the product itself accurate (same identity, proportions, and essential colors).
+Improve overall lighting, sharpness, and clarity for shopping.
+If the background is busy or distracting, use a soft neutral or clean studio-style background.
+Do not add text, logos, or watermarks.
+Output a single polished product photo suitable for e-commerce.`;
 
-    const rawRef = new RawReferenceImage();
-    rawRef.referenceId = 1;
-    rawRef.referenceImage = {
-      imageBytes: buffer.toString('base64'),
-      mimeType,
-    };
-
-    const response = await this.client.models.editImage({
+    const completion = await this.client.models.generateContent({
       model,
-      prompt,
-      referenceImages: [rawRef],
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: buffer.toString('base64') } },
+            { text: prompt },
+          ],
+        },
+      ],
       config: {
-        numberOfImages: 1,
-        editMode: EditMode.EDIT_MODE_PRODUCT_IMAGE,
-        includeRaiReason: true,
+        responseModalities: ['TEXT', 'IMAGE'],
+        temperature: 0.35,
+        maxOutputTokens: 8192,
       },
     });
 
-    const gen = response.generatedImages?.[0];
-    const bytes = gen?.image?.imageBytes;
-    if (!bytes) {
-      const rai = gen?.raiFilteredReason;
+    const img = this.firstInlineImageFromGeminiResponse(completion);
+    if (!img) {
+      const block = completion.promptFeedback?.blockReason;
       throw new ServiceUnavailableException(
-        rai ? `Image filtered: ${rai}` : 'AI did not return an image',
+        block
+          ? `Image generation blocked (${String(block)})`
+          : 'AI did not return an image',
       );
     }
-    const outMime = gen?.image?.mimeType ?? 'image/png';
-    const outBuffer = Buffer.from(bytes, 'base64');
+    const outBuffer = Buffer.from(img.data, 'base64');
     if (!outBuffer.length) {
       throw new ServiceUnavailableException('AI returned an empty image');
     }
@@ -447,7 +453,27 @@ Rules:
       dto.productId,
       dto.imageUrl,
       outBuffer,
-      outMime,
+      img.mimeType,
     );
+  }
+
+  private firstInlineImageFromGeminiResponse(response: {
+    candidates?: Array<{
+      content?: { parts?: Array<{ inlineData?: { data?: string; mimeType?: string } }> };
+    }>;
+    promptFeedback?: { blockReason?: unknown };
+  }): { data: string; mimeType: string } | null {
+    for (const c of response.candidates ?? []) {
+      for (const part of c.content?.parts ?? []) {
+        const data = part.inlineData?.data;
+        if (data) {
+          return {
+            data,
+            mimeType: part.inlineData?.mimeType ?? 'image/png',
+          };
+        }
+      }
+    }
+    return null;
   }
 }
