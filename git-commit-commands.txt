@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────
+# GROUP 1: Password Reset Flow
+# ─────────────────────────────────────────────
+git add src/auth/dto/forgot-password.dto.ts
+git add src/auth/dto/reset-password.dto.ts
+git add src/auth/auth.controller.ts
+git add src/auth/auth.service.ts
+git add prisma/migrations/20260418183107_add_password_reset_tokens/
+git commit -m "feat(auth): add forgot and reset password flow with token-based validation"
+
+# ─────────────────────────────────────────────
+# GROUP 2: Mail Service
+# ─────────────────────────────────────────────
+git add src/mail/
+git commit -m "feat(mail): add mail module and service for transactional emails"
+
+# ─────────────────────────────────────────────
+# GROUP 3: FCM Push Notifications
+# ─────────────────────────────────────────────
+git add src/notifications/dto/register-fcm-token.dto.ts
+git add src/notifications/fcm.service.ts
+git add src/notifications/notifications.controller.ts
+git add src/notifications/notifications.module.ts
+git add src/notifications/notifications.service.ts
+git add prisma/migrations/20260418190000_add_user_fcm_tokens/
+git commit -m "feat(notifications): add FCM push notification service and token registration"
+
+# ─────────────────────────────────────────────
+# GROUP 4: Prisma Schema & Database Updates
+# ─────────────────────────────────────────────
+git add prisma/schema.prisma
+git commit -m "chore(prisma): update schema with password reset tokens and FCM token models"
+
+# ─────────────────────────────────────────────
+# GROUP 5: App Config & Core Module Updates
+# ─────────────────────────────────────────────
+git add src/app.module.ts
+git add src/config/configuration.ts
+git add src/users/users.service.ts
+git add src/ai/ai.service.ts
+git commit -m "chore(core): update app module, config, users service, and AI service integrations"
+
+# ─────────────────────────────────────────────
+# GROUP 6: Package & Docs
+# ─────────────────────────────────────────────
+git add package.json
+git add package-lock.json
+git add README.md
+git add git-commit-commands.txt
+git commit -m "chore: update dependencies and README documentation"
